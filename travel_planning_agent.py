@@ -1,32 +1,39 @@
+import requests
+from bs4 import BeautifulSoup
+import json
+import time
+import random
 from deep_need_analyzer import DeepNeedAnalyzer
 from design_framework_designer import TravelFrameworkDesigner
 from tool_coordinator import ToolCoordinator
+from openai import AsyncOpenAI, OpenAI
 
 class TravelPlanningAgent:
     """完整的旅行规划智能体"""
     
     def __init__(self):
         # 初始化各种Skill
-        self.need_analyzer = DeepNeedAnalyzer()
+        
+        self.client = OpenAI(api_key="sk-8de1af2c320640409f98ffd65352f8d5", base_url="https://dashscope.aliyuncs.com/compatible-mode/v1")
+        self.need_analyzer = DeepNeedAnalyzer(self.client)
         self.framework_designer = TravelFrameworkDesigner()
         self.tool_coordinator = None  # 在运行时注入tools
-        
         # 工具集合（实际使用时从外部注入）
         self.tools = {
-            "search_flights": self._mock_search_flights,
+            "search_flights": self._real_search_flights,  # 使用真实航班查询
             "search_hotels_tool": self._mock_search_hotels,
             "get_weather_forecast_tool": self._mock_get_weather,
             "calculate_budget_breakdown_tool": self._mock_calculate_budget,
             "get_attraction_info": self._mock_get_attraction_info
         }
-        
         # 协调器
         self.tool_coordinator = ToolCoordinator(self.tools)
-        
         # 决策历史
         self.decision_log = []
+        
     
     def plan_trip(self, user_request):
+
         """主要执行流程：完整展示Agent Skill与Tool Use的结合"""
         print("="*60)
         print("🧠 智能旅行规划引擎启动")
@@ -358,6 +365,24 @@ class TravelPlanningAgent:
                 "evening": "与当地人共进晚餐，深入交流",
                 "cultural_tip": "尝试学习几句当地方言或民歌，深度融入"
             }
+        
+    def _generate_nature_day(self, attractions, day_in_dest):
+        return {
+                "focus": "自然风光",
+                "morning": "走访当地村落，体验原生态生活",
+                "afternoon": "参加民族文化工作坊，学习传统技艺",
+                "evening": "与当地人共进晚餐，深入交流",
+                "cultural_tip": "尝试学习几句当地方言或民歌，深度融入"
+            }
+    
+    def _generate_general_day(self, attractions, day_in_dest):
+        return {
+                "focus": "常规的一天",
+                "morning": "走访当地村落，体验原生态生活",
+                "afternoon": "参加民族文化工作坊，学习传统技艺",
+                "evening": "与当地人共进晚餐，深入交流",
+                "cultural_tip": "尝试学习几句当地方言或民歌，深度融入"
+            }
     
     def _generate_value_proposition(self, theme, deep_needs):
         """生成价值主张"""
@@ -480,9 +505,135 @@ class TravelPlanningAgent:
             "data_snapshot": str(data)[:200] + "..." if len(str(data)) > 200 else str(data)
         })
     
-    # ========== 模拟工具方法 ==========
+    # ========== 真实航班查询方法 ==========
+    def _real_search_flights(self, departure_city, arrival_city, **kwargs):
+        """真实航班搜索工具 - 使用航空公司或航班聚合网站API"""
+        flight_list = []
+        
+        # 支持的航空公司API端点
+        airline_apis = {
+            "CAAC": {
+                "url": "https://flightstatus.flightaware.com/json/FlightStatus",
+                "params": {
+                    "airportCode": arrival_city,
+                    "pageSize": 10
+                },
+                "headers": {
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+                    "Accept": "application/json"
+                }
+            }
+        }
+        
+        # 如果有日期参数，添加到查询中
+        if kwargs.get('departure_date'):
+            airline_apis["CAAC"]["params"]["date"] = kwargs['departure_date']
+        
+        # 尝试多个数据源
+        for airline, api_info in airline_apis.items():
+            try:
+                print(f"  正在查询{airline}航班信息...")
+                
+                # 获取出发城市机场代码
+                departure_airport = self._get_airport_code(departure_city)
+                arrival_airport = self._get_airport_code(arrival_city)
+                
+                if not departure_airport or not arrival_airport:
+                    print(f"    ⚠️ 无法获取机场代码: {departure_city} → {arrival_city}")
+                    continue
+                
+                # 构建查询参数
+                params = {
+                    "dep": departure_airport,
+                    "arr": arrival_airport,
+                    "date": kwargs.get('departure_date', '')
+                }
+                
+                # 查询航班信息
+                response = requests.get(
+                    api_info["url"],
+                    params=params,
+                    headers=api_info["headers"],
+                    timeout=10
+                )
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    
+                    # 解析响应数据（不同API返回格式不同）
+                    if 'flightStatuses' in data:
+                        for flight in data['flightStatuses']:
+                            flight_list.append({
+                                "airline": flight.get('airline', airline),
+                                "flight_no": flight.get('flightNumber', ''),
+                                "departure_time": flight.get('departureTime', ''),
+                                "arrival_time": flight.get('arrivalTime', ''),
+                                "price": random.randint(800, 1500),  # 实际项目中应该从API获取价格
+                                "class": "经济舱"
+                            })
+                    else:
+                        # 使用备用解析方式
+                        if 'flights' in data:
+                            for flight in data['flights']:
+                                flight_list.append({
+                                    "airline": flight.get('airlineName', airline),
+                                    "flight_no": flight.get('flightCode', ''),
+                                    "departure_time": flight.get('departureTime', ''),
+                                    "arrival_time": flight.get('arrivalTime', ''),
+                                    "price": random.randint(800, 1500),
+                                    "class": "经济舱"
+                                })
+                
+                # 避免过快查询
+                time.sleep(1)
+                
+            except requests.exceptions.Timeout:
+                print(f"    ⚠️ 查询超时: {airline}")
+            except requests.exceptions.RequestException as e:
+                print(f"    ⚠️ 查询出错: {airline} - {str(e)}")
+        
+        # 如果无法获取真实数据，返回模拟数据作为备用
+        if not flight_list:
+            print("  无法获取真实航班数据，返回模拟数据")
+            flight_list = self._mock_search_flights(departure_city, arrival_city, **kwargs)
+        
+        return flight_list
+    
+    def _get_airport_code(self, city_name):
+        """获取城市的机场代码"""
+        # 中国主要城市机场代码映射
+        airport_codes = {
+            "北京": ["BJS", "PEK", "NAY"],
+            "上海": ["SHA", "PVG"],
+            "广州": ["CAN"],
+            "深圳": ["SZX"],
+            "成都": ["CTU"],
+            "重庆": ["CKG"],
+            "杭州": ["HGH"],
+            "西安": ["SIA"],
+            "武汉": ["WUH"],
+            "长沙": ["CSX"],
+            "南京": ["NKG"],
+            "青岛": ["TAO"],
+            "大连": ["DLC"],
+            "厦门": ["XMN"],
+            "昆明": ["KMG"],
+            "三亚": ["SYX"],
+            "海口": ["HAK"],
+            "哈尔滨": ["HRB"],
+            "长春": ["CGQ"],
+            "沈阳": ["SHE"]
+        }
+        
+        # 简化实现：返回第一个机场代码
+        if city_name in airport_codes:
+            return airport_codes[city_name][0]
+        
+        # 如果没有找到，返回城市名的前3个字母
+        return city_name[:3].upper()
+    
     def _mock_search_flights(self, departure_city, arrival_city, **kwargs):
-        """模拟航班搜索工具"""
+        """模拟航班搜索工具（备用）"""
         return [
             {
                 "airline": "中国国航",
@@ -550,3 +701,46 @@ class TravelPlanningAgent:
         return {
             "transportation": {"amount": 2400,}
         }
+    
+    def _mock_get_attraction_info(self, location, keywords=None):
+        """模拟景点信息查询工具"""
+        attractions_db = {
+            "大理": [
+                {"name": "大理古城", "type": "文化", "commercial_level": "中等", "time_needed": "半天"},
+                {"name": "洱海", "type": "自然", "commercial_level": "低", "time_needed": "全天"},
+                {"name": "崇圣寺三塔", "type": "文化", "commercial_level": "中等", "time_needed": "2-3小时"},
+                {"name": "喜洲古镇", "type": "文化", "commercial_level": "低", "time_needed": "半天"}
+            ],
+            "沙溪古镇": [
+                {"name": "沙溪古镇", "type": "文化", "commercial_level": "低", "time_needed": "全天"},
+                {"name": "石宝山", "type": "自然", "commercial_level": "低", "time_needed": "半天"},
+                {"name": "茶马古道", "type": "文化", "commercial_level": "低", "time_needed": "2-3小时"}
+            ],
+            "丽江": [
+                {"name": "丽江古城", "type": "文化", "commercial_level": "高", "time_needed": "全天"},
+                {"name": "玉龙雪山", "type": "自然", "commercial_level": "高", "time_needed": "全天"},
+                {"name": "束河古镇", "type": "文化", "commercial_level": "中等", "time_needed": "半天"}
+            ],
+            "昆明": [
+                {"name": "石林", "type": "自然", "commercial_level": "高", "time_needed": "半天"},
+                {"name": "滇池", "type": "自然", "commercial_level": "低", "time_needed": "2-3小时"},
+                {"name": "云南民族博物馆", "type": "文化", "commercial_level": "低", "time_needed": "3-4小时"}
+            ]
+        }
+        
+        attractions = attractions_db.get(location, [])
+        
+        if keywords:
+            filtered = []
+            for attr in attractions:
+                if any(keyword in attr.get("name", "") or keyword in attr.get("type", "") 
+                       for keyword in keywords):
+                    filtered.append(attr)
+            return filtered
+        
+        return attractions
+    
+if __name__ == "__main__":
+    agent = TravelPlanningAgent()
+    final_plan = agent.plan_trip("我需要一个7天的云南旅行计划，预算8000元，，希望能够多体验一下当地的文化和风景，避免太多的商业化")
+    print(f"the final result is: {final_plan}")

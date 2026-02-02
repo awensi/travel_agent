@@ -1,3 +1,5 @@
+import asyncio
+
 class ToolCoordinator:
     """Agent Skill: 多工具协调与协同工作能力"""
     
@@ -47,34 +49,42 @@ class ToolCoordinator:
         """并行调用多个工具收集数据"""
         print("  阶段1: 并行数据收集...")
         
-        collection_tasks = []
-        results = {}
+        # 定义异步执行函数
+        async def _async_data_collection():
+            collection_tasks = []
+            
+            # 为每个目的地并行收集信息
+            for destination in framework["destinations"]:
+                # 并行收集任务
+                tasks_for_destination = [
+                    self._collect_transportation_info(destination),
+                    self._collect_accommodation_info(destination, framework),
+                    self._collect_attraction_info(destination, framework["theme"]),
+                    self._collect_weather_info(destination)
+                ]
+                collection_tasks.extend(tasks_for_destination)
+            
+            # 使用 asyncio.gather 并行执行所有收集任务
+            task_results = await asyncio.gather(*collection_tasks)
+            
+            results = {}
+            # 处理任务结果
+            for result in task_results:
+                category, destination, data =  result
+                if destination not in results:
+                    results[destination] = {}
+                results[destination][category] = data
+            
+            # 并行收集预算信息
+            budget_data = await self._collect_budget_info(framework)
+            results["budget"] = budget_data
+            
+            return results
         
-        # 为每个目的地并行收集信息
-        for destination in framework["destinations"]:
-            # 并行收集任务（实际实现中会使用多线程/异步）
-            tasks_for_destination = [
-                self._collect_transportation_info(destination),
-                self._collect_accommodation_info(destination, framework),
-                self._collect_attraction_info(destination, framework["theme"]),
-                self._collect_weather_info(destination)
-            ]
-            collection_tasks.extend(tasks_for_destination)
-        
-        # 执行所有收集任务（简化示例，实际会并行执行）
-        for task in collection_tasks:
-            category, destination, data = task
-            if destination not in results:
-                results[destination] = {}
-            results[destination][category] = data
-        
-        # 收集预算信息
-        budget_data = self._collect_budget_info(framework)
-        results["budget"] = budget_data
-        
-        return results
+        # 运行异步收集函数
+        return asyncio.run(_async_data_collection())
     
-    def _collect_transportation_info(self, destination):
+    async def _collect_transportation_info(self, destination):
         """收集交通信息（协调多个交通相关工具）"""
         print(f"    → 为{destination}收集交通信息")
         
@@ -155,7 +165,7 @@ class ToolCoordinator:
         
         return recommendations
     
-    def _collect_accommodation_info(self, destination, framework):
+    async def _collect_accommodation_info(self, destination, framework):
         """收集住宿信息（智能筛选）"""
         print(f"    → 为{destination}收集住宿信息")
         
@@ -266,7 +276,7 @@ class ToolCoordinator:
         }
         return strategies.get(theme["primary_theme"], "平衡性价比和位置")
     
-    def _collect_attraction_info(self, destination, theme):
+    async def _collect_attraction_info(self, destination, theme):
         """收集景点信息（智能过滤）"""
         print(f"    → 为{destination}收集景点信息")
         
@@ -394,7 +404,7 @@ class ToolCoordinator:
                 return 3
         return 2
     
-    def _collect_weather_info(self, destination):
+    async def _collect_weather_info(self, destination):
         """收集天气信息"""
         print(f"    → 为{destination}收集天气信息")
         
@@ -402,7 +412,7 @@ class ToolCoordinator:
         
         return ("weather", destination, weather)
     
-    def _collect_budget_info(self, framework):
+    async def _collect_budget_info(self, framework):
         """收集预算信息"""
         print("    → 收集预算信息")
         
