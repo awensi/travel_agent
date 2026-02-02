@@ -1,4 +1,9 @@
+import json
 class DeepNeedAnalyzer:
+
+    def __init__(self, client):
+        self.model_name = "qwen-max"
+        self.client = client
 
 
     def analyze_deep_needs(self, user_request):
@@ -21,7 +26,7 @@ class DeepNeedAnalyzer:
         analysis_result["surface_needs"] = self._extract_surface_needs(user_request)
 
         #2推理深层偏好
-        analysis_result["surface_needs"] = self._infer_deep_preferences(
+        analysis_result["deep_preferences"] = self._infer_deep_preferences(
             user_request,
             analysis_result["surface_needs"]
         )
@@ -44,7 +49,10 @@ class DeepNeedAnalyzer:
         """
         #简化为关键词提取，实际会使用更复杂的NLP模型
         keywords = {
-
+            "地点": ["大理", "丽江", "昆明", "云南", "昆明", "石林", "滇池", "洱海", "玉龙雪山"],
+            "预算": ["20000", "15000", "10000", "8000", "6000", "5000"],
+            "排除": ["商业化", "商业化的", "不要商业化", "避免商业化"],
+            "兴趣": ["文化", "少数民族", "民族文化", "自然风光", "风景", "景色"]
         }
 
         surface_needs = []
@@ -61,6 +69,68 @@ class DeepNeedAnalyzer:
     
     def _infer_deep_preferences(self, user_request, surface_needs):
         #推理深层偏好（高级认知能力）,需要根据user_request调用ai的接口，进行推演
+        """使用工具调用获得标准化输出"""
+        deep_preferences = []
+        tools = [
+            {
+                "type":"function",
+                "function":{
+                    "name":"extract_consumption_preference",
+                    "description":"从旅行请求中提取消费者偏好特征",
+                    "parameters":{
+                        "type":"object",
+                        "properties":{
+                            "type":{
+                                "type":"string",
+                                "description":"分析类型，如'消费偏好','人群偏好','体验偏好'"
+                            },
+                            "preference": {
+                                "type": "string",
+                                "description":"偏好描述，如'追求原生态体验','避开大众旅游团','重视体验价值而非商业设施'"
+                            },
+                            "confidence": {
+                                "type": "number",
+                                "description":"分析置信度，范围0-1"
+                            },
+                            "rationale": {
+                                "type": "string",
+                                "description": "分析理由，引用用户原话中的关键词"
+                            }
+                        },
+                        "required":["type","preference","confidence","rationale"]
+                    }
+                }
+            }
+        ]
+        try:
+            response = self.client.chat.completions.create(
+                model = self. model_name,
+                messages = [
+                    {
+                        "role": "user",
+                        "content": f"请分析以下请求的消费偏好: {user_request}"
+                    }
+                ],
+                tools = tools,
+                tool_choice = {
+                    "type":"function",
+                    "function": {
+                        "name": "extract_consumption_preference"
+                    }
+                }
+            )
+
+            #解析工具调用结果
+            tool_call = response.choices[0].message.tool_calls[0]
+            arguments = json.loads(tool_call.function.arguments)
+            print(f"深层次的分析结果: {arguments}")
+            deep_preferences.append(arguments)
+            return deep_preferences
+        except Exception as e:
+            print(f"Error: {e}")
+            return self._init_default_need(surface_needs)
+        
+    def _init_default_need(self, surface_needs):
         deep_preferences = []
 
         #推理1 从不太想去商业化的地方 推断
@@ -86,34 +156,36 @@ class DeepNeedAnalyzer:
                 }
             ])
             
-            #推理2 从少数民族文化推断
-            if any("少数民族文化" in n["value"] or "文化" in n["value"] for n in surface_needs if n["category"] == "兴趣"):
-                deep_preferences.extend([
-                    {
-                        "type": "文化偏好",
-                        "preference": "渴望深度文化接触",
-                        "confidence": 0.9,
-                        "rationale": "明确提到少数民族文化，说明对文化内涵有需求"
-                    },
-                    {
-                        "type": "活动偏好",
-                        "preference": "可能喜欢参与式文化体验",
-                        "confidence": 0.7,
-                        "rationale": "从看文化到体验文化的潜在需求"
-                    }
-                ])
+        #推理2 从少数民族文化推断
+        if any("少数民族文化" in n["value"] or "文化" in n["value"] for n in surface_needs if n["category"] == "兴趣"):
+            deep_preferences.extend([
+                {
+                    "type": "文化偏好",
+                    "preference": "渴望深度文化接触",
+                    "confidence": 0.9,
+                    "rationale": "明确提到少数民族文化，说明对文化内涵有需求"
+                },
+                {
+                    "type": "活动偏好",
+                    "preference": "可能喜欢参与式文化体验",
+                    "confidence": 0.7,
+                    "rationale": "从看文化到体验文化的潜在需求"
+                }
+            ])
 
-            #推理3 从预算和时间推断
-            budget = next((n for n in surface_needs if n["category"] == "预算"), None)
-            
-            if budget and "8000" in budget["value"]:
-                deep_preferences.append({
-                    "type": "消费模式",
-                    "preference": "追求性价比而非奢华",
-                    "confidence": 0.8,
-                    "rationale": "7天8000元预算表明中等消费水平，重视性价比"
-                })
-            return deep_preferences
+        #推理3 从预算和时间推断
+        budget = next((n for n in surface_needs if n["category"] == "预算"), None)
+        
+        if budget and "8000" in budget["value"]:
+            deep_preferences.append({
+                "type": "消费模式",
+                "preference": "追求性价比而非奢华",
+                "confidence": 0.8,
+                "rationale": "7天8000元预算表明中等消费水平，重视性价比"
+            })
+        return deep_preferences
+
+        
         
     def _identify_constraints(self, user_request):
         #识别约束条件
@@ -178,7 +250,6 @@ class DeepNeedAnalyzer:
             "经济价值": ["追求性价比而非奢华"],
             "时间价值": ["高效行程安排", "避免交通浪费时间"]
         }
-
         value_priorities = []
         for value_type, indicators in priority_model.items():
             matching_prefs = [p for p in deep_preferences if p["preference"] in indicators]

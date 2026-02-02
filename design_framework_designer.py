@@ -32,11 +32,12 @@ class TravelFrameworkDesigner:
                 theme, destinations, pacing, budget_allocation
             )
         }
+        return framework
         
     def _determine_travel_theme(self, deep_preferences):
         #确定旅行主题
         #分析价值优先级，确定旅行主题
-        value_priorities = [p["value_type"] for  p in deep_preferences.get("deep_preferences", [])]
+        value_priorities = [p["type"] for p in deep_preferences.get("deep_preferences", [])]
         if "体验价值" in value_priorities:
             if any("少数民族文化" in str(p) for p in deep_preferences.get("deep_preferences", [])):
                 return {
@@ -108,7 +109,7 @@ class TravelFrameworkDesigner:
         #基于主题和偏好过滤
         filtered_destinations = {}
         for name, info in yunnan_destinations.items():
-            theme_match = theme["primary_theme"] in info["theme"] or theme["primary_theme"]
+            theme_match = theme["primary_theme"] in info["themes"] or theme["primary_theme"]
 
             #商业化程度过滤
             commercial_filter = True
@@ -194,7 +195,7 @@ class TravelFrameworkDesigner:
             base_allocation["food"] += 0.05
 
         #根据目的地商业化程度调整
-        commerical_levels = [d[commerical_levels] for d in destinations.values()]
+        commerical_levels = [d["commercial_level"] for d in destinations.values()]
         if "高" in commerical_levels:
             base_allocation["accommodation"] += 0.03
             base_allocation["experiences"] += 0.02
