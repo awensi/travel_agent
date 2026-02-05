@@ -1,7 +1,9 @@
 import json
+from openai import OpenAI
+
 class DeepNeedAnalyzer:
 
-    def __init__(self, client):
+    def __init__(self, client: OpenAI):
         self.model_name = "qwen-max"
         self.client = client
 
@@ -47,25 +49,78 @@ class DeepNeedAnalyzer:
         :param self: Description
         :param user_request: Description
         """
+
         #简化为关键词提取，实际会使用更复杂的NLP模型
-        keywords = {
-            "地点": ["大理", "丽江", "昆明", "云南", "昆明", "石林", "滇池", "洱海", "玉龙雪山"],
-            "预算": ["20000", "15000", "10000", "8000", "6000", "5000"],
-            "排除": ["商业化", "商业化的", "不要商业化", "避免商业化"],
-            "兴趣": ["文化", "少数民族", "民族文化", "自然风光", "风景", "景色"]
-        }
+        # keywords = {
+        #     "地点": ["大理", "丽江", "昆明", "云南", "昆明", "石林", "滇池", "洱海", "玉龙雪山"],
+        #     "预算": ["20000", "15000", "10000", "8000", "6000", "5000"],
+        #     "排除": ["商业化", "商业化的", "不要商业化", "避免商业化"],
+        #     "兴趣": ["文化", "少数民族", "民族文化", "自然风光", "风景", "景色"]
+        # }
 
         surface_needs = []
-        for category, terms in keywords.items():
-            for term in terms:
-                if term in user_request:
-                    surface_needs.append({
-                        "category": category,
-                        "value": term,
-                        "confidence": 0.9
-                    })
-                    break
-        return surface_needs
+        # for category, terms in keywords.items():
+        #     for term in terms:
+        #         if term in user_request:
+        #             surface_needs.append({
+        #                 "category": category,
+        #                 "value": term,
+        #                 "confidence": 0.9
+        #             })
+        #             break
+
+
+        tools = [
+            {
+                "type":"function",
+                "function":{
+                    "name":"extract_surface_needs",
+                    "description":"从请求中提取地点、预算、排除、兴趣四个特征",
+                    "parameters": {
+                        "type": "object",
+                        "properties":{
+                            "地点":{
+                                "type":  "list",
+                                "description":"请求中描述的地点信息"
+                            },
+                            "预算": {
+                                "type": "list",
+                                "description": "请求中描述的有关预算的信息"
+                            },
+                            "排除": {
+                                "type": "list",
+                                "description":"请求中描述的需要排除，不感兴趣的信息"
+                            },
+                            "兴趣":{
+                                "type":"list",
+                                "description":"请求中描述的比较感兴趣的信息"
+                            }
+                        },
+                        "required":["地点","预算","排除","兴趣"]
+                    }
+                }
+            }
+        ]
+
+        try:
+            response = self.client.chat.completions.create(
+                model=self.model_name,
+                messages=[
+                    {
+                        "role":"user",
+                        "content": f"请提取出请求的关键特征信息: {user_request}"
+                    }
+                ],
+                tools= tools
+            )
+            tools_call = response.choices[0].message.tool_calls[0]
+            arguments = json.loads(tools_call.function.arguments)
+            print(f"the type is {type(arguments)}")
+            surface_needs.append(arguments)
+            return surface_needs
+        except Exception as e:
+            return ""
+        
     
     def _infer_deep_preferences(self, user_request, surface_needs):
         #推理深层偏好（高级认知能力）,需要根据user_request调用ai的接口，进行推演
@@ -104,7 +159,7 @@ class DeepNeedAnalyzer:
         ]
         try:
             response = self.client.chat.completions.create(
-                model = self. model_name,
+                model = self.model_name,
                 messages = [
                     {
                         "role": "user",
@@ -188,31 +243,78 @@ class DeepNeedAnalyzer:
         
         
     def _identify_constraints(self, user_request):
-        #识别约束条件
-        constaints = [
+        tools = [
             {
-                "type":"硬约束",
-                "constraint":"预算上限8000元",
-                "strictness":"必须遵守"
-            },
-            {
-                "type":"硬约束",
-                "constraint": "时间限制7天",
-                "strictness": "必须遵守"
-            },
-            {
-                "type": "软约束",
-                "constraint": "避免过度商业化景点",
-                "strictness": "尽量满足，可部分妥协"
-            },
-            {
-                "type": "推断约束",
-                "constraint": "可能偏好安静住宿环境",
-                "strictness": "建议满足",
-                "source": "从反商业化推断"
+                "type":"function",
+                "function": {
+                    "name":"identify_constraint_info",
+                    "description":"从请求中获取约束条件，包含硬约束（必须遵守）、软约束(尽量满足，可部分妥协)、推断约束(根据请求推断得出)",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "硬约束": {
+                                "type":"list",
+                                "description": "请求中必须要遵守的规则"
+                            },
+                            "软约束" : {
+                                "type": "list",
+                                "description": "请求中尽量满足，可部分妥协的条件约束"
+                            },
+                            "推断约束":{
+                                "type":"list",
+                                "description": "从请求中推断出来的约束条件"
+                            }   
+                        },
+                        "required":["硬约束","软约束","推断约束"]
+                    }
+                }
             }
         ]
-        return constaints
+        response = self.client.chat.completions.create(
+            model= self.model_name,
+            messages=[
+                {
+                    "role": "user",
+                    "content": f"从分析一下请求中的约束条件：{user_request}"
+                }
+            ],
+            tools= tools
+        )
+        print(f"the response is {response}")
+        tools_call = response.choices[0].message.tool_calls[0]
+        arguments = json.loads(tools_call.function.arguments)
+        print(f"the type is {type(arguments)}")
+        print(f"the argument is {arguments}")
+        hard_strict_array = arguments.get("硬约束")
+        soft_strict_array = arguments.get("软约束")
+        mark_strict_array = arguments.get("推断约束")
+        constaints_array = []
+        
+        if hard_strict_array is not None:
+            for strict in hard_strict_array:
+                constaint = {
+                    "type": "硬约束",
+                    "constraint": strict,
+                    "strictness": "必须遵守"
+                }
+                constaints_array.append(constaint)
+
+        for strict in soft_strict_array:
+            constaint = {
+                "type": "软约束",
+                "constraint": strict,
+                "strictness": "尽量满足，可部分妥协"
+            }
+            constaints_array.append(constaint)
+        
+        for strict in mark_strict_array:
+            constaint = {
+                "type": "软约束",
+                "constraint": strict,
+                "strictness": "尽量满足，可部分妥协"
+            }
+            constaints_array.append(constaint)
+        return constaints_array
     
     def _predict_unstated_needs(self, user_request):
         #预测用户为明说的需求
@@ -263,3 +365,12 @@ class DeepNeedAnalyzer:
         #按权重排序
         value_priorities.sort(key=lambda x: x["weight"], reverse=True)
         return value_priorities
+    
+if __name__ == "__main__":
+    client = OpenAI(
+        api_key="sk-8de1af2c320640409f98ffd65352f8d5",
+        base_url="https://dashscope.aliyuncs.com/compatible-mode/v1"
+    )
+    need_analyzer = DeepNeedAnalyzer(client=client)
+    result = need_analyzer._identify_constraints("我想去云南旅游，旅游时间在8天，预算八千块，不喜欢商业化的景点，对人文景观这些地方感兴趣")
+    print(f"the analyser result is {result}")
