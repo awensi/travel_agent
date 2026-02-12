@@ -54,9 +54,9 @@ class TravelPlanningAgent:
             print(f"  • {pref['preference']} (置信度: {pref['confidence']})")
             print(f"    依据: {pref['rationale']}")
         
-        print("\n⚖️ 价值优先级排序:")
-        for value in deep_needs.get("value_priorities", []):
-            print(f"  • {value['value_type']}: 权重 {value['weight']:.2f}")
+        # print("\n⚖️ 价值优先级排序:")
+        # for value in deep_needs.get("value_priorities", []):
+        #     print(f"  • {value['value_type']}: 权重 {value['weight']:.2f}")
         
         self._log_decision("deep_needs_analysis", deep_needs)
         

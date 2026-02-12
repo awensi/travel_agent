@@ -39,7 +39,7 @@ class DeepNeedAnalyzer:
         analysis_result["unstated_needs"] = self._predict_unstated_needs(user_request)
 
         #5 价值排序
-        analysis_result["value_prrorities"] = self._rank_value_priorities(analysis_result["deep_preferences"])
+        analysis_result["value_priorities"] = self._rank_value_priorities(analysis_result["deep_preferences"])
         return analysis_result
     
     def _extract_surface_needs(self, user_request):
@@ -115,7 +115,6 @@ class DeepNeedAnalyzer:
             )
             tools_call = response.choices[0].message.tool_calls[0]
             arguments = json.loads(tools_call.function.arguments)
-            print(f"the type is {type(arguments)}")
             surface_needs.append(arguments)
             return surface_needs
         except Exception as e:
@@ -131,25 +130,25 @@ class DeepNeedAnalyzer:
                 "type":"function",
                 "function":{
                     "name":"extract_consumption_preference",
-                    "description":"从旅行请求中提取消费者偏好特征",
+                    "description":"从请求中提取消费者的多个特征，并根据请求中的证据，总结出人群的消费倾向，对消费倾向给出相应的置信度",
                     "parameters":{
                         "type":"object",
                         "properties":{
                             "type":{
                                 "type":"string",
-                                "description":"分析类型，如'消费偏好','人群偏好','体验偏好'"
+                                "description":"分析总结消费者的消费特征类型,例如消费偏好，人群偏好，体验偏好等"
                             },
                             "preference": {
                                 "type": "string",
-                                "description":"偏好描述，如'追求原生态体验','避开大众旅游团','重视体验价值而非商业设施'"
+                                "description":"根据消费者的请求，推断消费者的消费倾向"
                             },
                             "confidence": {
                                 "type": "number",
-                                "description":"分析置信度，范围0-1"
+                                "description":"分析消费特征类型的置信度，范围0-1"
                             },
                             "rationale": {
                                 "type": "string",
-                                "description": "分析理由，引用用户原话中的关键词"
+                                "description": "利用请求中的关键词语证据，为消费者的消费倾向提供证据"
                             }
                         },
                         "required":["type","preference","confidence","rationale"]
@@ -167,14 +166,16 @@ class DeepNeedAnalyzer:
                     }
                 ],
                 tools = tools,
-                tool_choice = {
-                    "type":"function",
-                    "function": {
-                        "name": "extract_consumption_preference"
-                    }
-                }
+                temperature=0.5
+                # ,
+                # tool_choice = {
+                #     "type":"function",
+                #     "function": {
+                #         "name": "extract_consumption_preference"
+                #     }
+                # }
             )
-
+            print(response)
             #解析工具调用结果
             tool_call = response.choices[0].message.tool_calls[0]
             arguments = json.loads(tool_call.function.arguments)
@@ -280,11 +281,8 @@ class DeepNeedAnalyzer:
             ],
             tools= tools
         )
-        print(f"the response is {response}")
         tools_call = response.choices[0].message.tool_calls[0]
         arguments = json.loads(tools_call.function.arguments)
-        print(f"the type is {type(arguments)}")
-        print(f"the argument is {arguments}")
         hard_strict_array = arguments.get("硬约束")
         soft_strict_array = arguments.get("软约束")
         mark_strict_array = arguments.get("推断约束")
@@ -309,11 +307,13 @@ class DeepNeedAnalyzer:
         
         for strict in mark_strict_array:
             constaint = {
-                "type": "软约束",
+                "type": "推断约束",
                 "constraint": strict,
-                "strictness": "尽量满足，可部分妥协"
+                "strictness": "根据请求推断得出"
             }
             constaints_array.append(constaint)
+        
+
         return constaints_array
     
     def _predict_unstated_needs(self, user_request):
@@ -372,5 +372,6 @@ if __name__ == "__main__":
         base_url="https://dashscope.aliyuncs.com/compatible-mode/v1"
     )
     need_analyzer = DeepNeedAnalyzer(client=client)
-    result = need_analyzer._identify_constraints("我想去云南旅游，旅游时间在8天，预算八千块，不喜欢商业化的景点，对人文景观这些地方感兴趣")
+    surface_needs = []
+    result = need_analyzer._infer_deep_preferences("我想去云南旅游，旅游时间在8天，预算八千块，对人文景观这些地方感兴趣，希望度过一个比较悠闲，不赶时间的旅行时光", surface_needs)
     print(f"the analyser result is {result}")
